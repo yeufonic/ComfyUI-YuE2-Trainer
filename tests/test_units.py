@@ -582,3 +582,33 @@ def test_semantic_chunk_plan_pads_trailing_partial_second():
     import pytest
     with pytest.raises(ValueError):
         chunk_plan(0)
+
+
+def test_inference_tensors_in_a_model_become_ordinary_ones():
+    """A model ComfyUI loaded straight onto a GPU that shares memory keeps the inference tensors it was made with;
+    autograd cannot save those, so they are copied before training, and ordinary ones are left alone."""
+    from yue2_trainer.resume import _inference, ordinary_tensors
+    with torch.inference_mode():
+        loaded = nn.Linear(4, 4)
+        loaded.register_buffer("scale", torch.ones(4))
+    kept = nn.Linear(4, 4)
+    model = nn.Sequential(loaded, kept)
+    before = kept.weight
+    assert _inference(loaded.weight) and _inference(loaded.scale)
+    assert ordinary_tensors(model) == 3                       # weight, bias, buffer
+    assert not _inference(loaded.weight) and not _inference(loaded.scale)
+    assert isinstance(loaded.weight, nn.Parameter) and kept.weight is before
+    x = torch.ones(2, 4, requires_grad=True)
+    model(x).sum().backward()                                 # would raise with the inference tensors left in
+    assert ordinary_tensors(model) == 0
+
+
+def test_a_parameter_with_no_version_counter_counts_as_inference():
+    from yue2_trainer.resume import _inference
+
+    class NoVersion(torch.Tensor):
+        @property
+        def _version(self):
+            raise RuntimeError("Inference tensors do not track version counter.")
+    t = torch.ones(2).as_subclass(NoVersion)
+    assert not t.is_inference() and _inference(t)

@@ -82,6 +82,39 @@ def _rng_tuple(value):
     return value
 
 
+def _inference(t) -> bool:
+    """An inference tensor, or a Parameter around one: on some builds (PyTorch 2.13 on Metal) ``is_inference()`` says
+    no for the second, but it has no version counter either, and that is what autograd needs to save it."""
+    if t.is_inference():
+        return True
+    try:
+        t._version
+    except RuntimeError:
+        return True
+    return False
+
+
+def ordinary_tensors(module) -> int:
+    """Replace the module's inference tensors with ordinary copies; how many there were.
+
+    ComfyUI loads a checkpoint under ``torch.inference_mode()``, so its tensors are inference tensors. A model moved
+    to the GPU for training gets ordinary ones from the move; on a GPU that shares the computer's memory (Apple
+    silicon) the model is loaded straight onto it and not moved again, and the first backward pass fails with
+    "Inference tensors do not track version counter"."""
+    made = 0
+    with torch.inference_mode(False):
+        for mod in module.modules():
+            for name, t in list(mod._parameters.items()):
+                if t is not None and _inference(t):
+                    mod._parameters[name] = torch.nn.Parameter(t.detach().clone(), requires_grad=t.requires_grad)
+                    made += 1
+            for name, t in list(mod._buffers.items()):
+                if t is not None and _inference(t):
+                    mod._buffers[name] = t.detach().clone()
+                    made += 1
+    return made
+
+
 def _clone(value):
     """Ordinary copies of every tensor (inference tensors cannot be updated in place by the optimizer)."""
     if torch.is_tensor(value):

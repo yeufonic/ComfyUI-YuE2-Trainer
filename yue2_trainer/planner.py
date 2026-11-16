@@ -310,6 +310,8 @@ def _load_clips(clip, devices: list[torch.device]):
         clips.append(work)
     for work, device in zip(clips, devices):
         comfy.model_management.load_models_gpu([work.patcher], force_full_load=True)
+        from .acoustic import _ordinary
+        _ordinary(work.cond_stage_model)
         work.cond_stage_model.set_clip_options({"execution_device": device})
         work.cond_stage_model.model.requires_grad_(False)
         _check_trainable_weights(work.cond_stage_model.model)

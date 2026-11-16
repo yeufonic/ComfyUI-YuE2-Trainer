@@ -328,6 +328,14 @@ def _check_trainable_weights(module):
                      "quantized layers (less VRAM, slower steps)", type(weight).__name__, "bf16")
 
 
+def _ordinary(module) -> None:
+    from .resume import ordinary_tensors
+    made = ordinary_tensors(module)
+    if made:
+        logging.info("YuE2 trainer: %d of the model's tensors were inference tensors (it was already on a GPU that "
+                     "shares the computer's memory); training uses ordinary copies", made)
+
+
 def _setup_replicas(patchers, devices: list[torch.device], cfg: AcousticConfig, lora_dtype) -> list[Replica]:
     replicas = []
     for index, (mp, device) in enumerate(zip(patchers, devices)):
@@ -383,6 +391,8 @@ def train_acoustic_lora(model_patcher, clip, dataset: Dataset, cfg: AcousticConf
 
     # 2. Load the acoustic model (one replica per device) and attach LoRA.
     patchers = _load_patchers(model_patcher, devices)
+    for mp in patchers:
+        _ordinary(mp.model)
     lora_dtype = torch.float32 if cfg.lora_dtype == "fp32" else torch.bfloat16
     comfy.model_management.in_training = True
     replicas = _setup_replicas(patchers, devices, cfg, lora_dtype)
