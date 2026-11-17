@@ -329,11 +329,16 @@ def _check_trainable_weights(module):
 
 
 def _ordinary(module) -> None:
+    """On Apple silicon, ordinary copies of the model's inference tensors (see resume.ordinary_tensors).  Only there:
+    on an NVIDIA card ComfyUI's loader casts the weights for each step, so its few resident inference tensors are never
+    saved for backward, and training there stays exactly as it was."""
     from .resume import ordinary_tensors
+    if not any(t.device.type == "mps" for t in module.parameters()):
+        return
     made = ordinary_tensors(module)
     if made:
-        logging.info("YuE2 trainer: %d of the model's tensors were inference tensors (it was already on a GPU that "
-                     "shares the computer's memory); training uses ordinary copies", made)
+        logging.info("YuE2 trainer: %d of the model's tensors were inference tensors (the GPU shares the computer's "
+                     "memory, so the model was not moved for training); training uses ordinary copies", made)
 
 
 def _setup_replicas(patchers, devices: list[torch.device], cfg: AcousticConfig, lora_dtype) -> list[Replica]:

@@ -612,3 +612,14 @@ def test_a_parameter_with_no_version_counter_counts_as_inference():
             raise RuntimeError("Inference tensors do not track version counter.")
     t = torch.ones(2).as_subclass(NoVersion)
     assert not t.is_inference() and _inference(t)
+
+
+def test_only_a_model_on_apple_silicon_gets_ordinary_copies(monkeypatch):
+    """On an NVIDIA card (or the CPU) the model is left as ComfyUI loaded it: training there worked before the copies."""
+    from yue2_trainer import acoustic, resume
+    called = []
+    monkeypatch.setattr(resume, "ordinary_tensors", lambda module: called.append(module) or 0)
+    with torch.inference_mode():
+        model = nn.Linear(4, 4)
+    acoustic._ordinary(model)
+    assert called == []
